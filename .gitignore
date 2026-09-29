@@ -1,0 +1,46 @@
+# Node.js dependencies
+node_modules/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Trae
+.trae/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Build output
+dist/
+build/
+# Temporary files
+*.tmp
+*.tempcoverage/
+
+
+# OS files
+.DS_Store
+
+# Uploaded application files
+backend/uploads/*
+!backend/uploads/.gitkeep

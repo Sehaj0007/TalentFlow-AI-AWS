@@ -9,6 +9,6 @@ Files:
 
 Demo login:
 Email: admin@talentflowai.com
-Password: Admin@123
+Password: <configured via environment variable>
 
 Keep all four website files in the same folder.
