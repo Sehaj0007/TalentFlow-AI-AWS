@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 
 const controller = require('../controllers/candidatesController');
+const { authenticate } = require('../middleware/auth');
 
-router.get('/', controller.list);
-router.post('/', controller.create);
-router.patch('/:id', controller.update);
+router.get('/', authenticate, controller.list);
+router.post('/', authenticate, controller.create);
+router.patch('/:id', authenticate, controller.update);
 
 module.exports = router;

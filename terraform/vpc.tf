@@ -195,3 +195,47 @@ resource "aws_route_table_association" "db_b" {
   subnet_id      = aws_subnet.db_b.id
   route_table_id = aws_route_table.db.id
 }
+
+# ============================================================
+# NAT GATEWAY
+#
+# Provides outbound internet/AWS-service access for resources
+# in the private application subnets.
+#
+# One NAT Gateway is intentionally used for this project to
+# control cost. For full production AZ resilience, use one NAT
+# Gateway per Availability Zone.
+# ============================================================
+
+resource "aws_eip" "nat" {
+  domain = "vpc"
+
+  tags = merge(local.common_tags, {
+    Name = "TalentFlow-NAT-EIP"
+    Tier = "Network"
+  })
+}
+
+resource "aws_nat_gateway" "talentflow" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public_a.id
+
+  depends_on = [
+    aws_internet_gateway.talentflow
+  ]
+
+  tags = merge(local.common_tags, {
+    Name = "TalentFlow-NAT-Gateway"
+    Tier = "Network"
+  })
+}
+
+# ------------------------------------------------------------
+# Private application route -> NAT Gateway
+# ------------------------------------------------------------
+
+resource "aws_route" "app_nat" {
+  route_table_id         = aws_route_table.app.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.talentflow.id
+}

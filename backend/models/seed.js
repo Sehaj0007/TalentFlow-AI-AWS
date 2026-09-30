@@ -3,23 +3,26 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
-const demoPassword = process.env.DEMO_ADMIN_PASSWORD;
 
 const config = {
-  host: process.env.PGHOST || 'localhost',
-  port: parseInt(process.env.PGPORT, 10) || 5432,
-  user: process.env.PGUSER || 'postgres',
-  password: process.env.PGPASSWORD || 'postgres',
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT, 10) || 5432,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  ssl: {
+    rejectUnauthorized: false
+  }
 };
-const TARGET_DB = process.env.PGDATABASE || 'talentflow';
+
+const TARGET_DB = process.env.DB_NAME || 'talentflow';
+
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.DEMO_ADMIN_EMAIL || 'admin@talentflowai.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || process.env.DEMO_ADMIN_PASSWORD;
 
 async function ensureDatabase() {
   const sysPool = new Pool({ ...config, database: 'postgres' });
   try {
-    const check = await sysPool.query(
-      'SELECT 1 FROM pg_database WHERE datname = $1',
-      [TARGET_DB]
-    );
+    const check = await sysPool.query('SELECT 1 FROM pg_database WHERE datname = $1', [TARGET_DB]);
     if (!check.rowCount) {
       console.log(`Creating database "${TARGET_DB}"...`);
       await sysPool.query(`CREATE DATABASE "${TARGET_DB}"`);
@@ -28,9 +31,7 @@ async function ensureDatabase() {
       console.log(`Database "${TARGET_DB}" already exists.`);
     }
   } catch (err) {
-    console.warn(
-      `Could not auto-create database "${TARGET_DB}". Please create it manually if needed. Error: ${err.message}`
-    );
+    console.warn(`Could not auto-create database "${TARGET_DB}". Please create it manually if needed. Error: ${err.message}`);
   } finally {
     await sysPool.end();
   }
@@ -87,17 +88,39 @@ async function applySchema(pool) {
 }
 
 async function seedUsers(pool) {
-  const email = 'admin@talentflowai.com';
-  const { rowCount } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-  if (rowCount) {
-    console.log('Demo user already exists, skipping.');
+  const email = ADMIN_EMAIL;
+
+  if (!ADMIN_PASSWORD) {
+    console.warn('ADMIN_PASSWORD is not set. Admin seeding skipped.');
     return;
   }
-  const passwordHash = await bcrypt.hash(demoPassword, 10);
-  await pool.query(
-    'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3)',
-    ['Admin', email, passwordHash]
+
+  const result = await pool.query(
+    `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
+    [email]
   );
+
+  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+
+  if (result.rowCount > 0) {
+    await pool.query(
+      `UPDATE users
+       SET name = $2,
+           password_hash = $3
+       WHERE id = $1`,
+      [result.rows[0].id, 'System Admin', passwordHash]
+    );
+
+    console.log('Existing admin user updated.');
+    return;
+  }
+
+  await pool.query(
+    `INSERT INTO users (name, email, password_hash)
+     VALUES ($1, $2, $3)`,
+    ['System Admin', email, passwordHash]
+  );
+
   console.log('Demo admin user inserted.');
 }
 
@@ -175,14 +198,11 @@ async function seedInterviews(pool) {
 
 async function seedNotifications(pool) {
   const { rows: userRows } = await pool.query(
-    "SELECT id FROM users WHERE email = 'admin@talentflowai.com' LIMIT 1"
+    "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", [ADMIN_EMAIL]
   );
   if (!userRows.length) return;
   const userId = userRows[0].id;
-  const { rowCount } = await pool.query(
-    'SELECT id FROM notifications WHERE user_id = $1',
-    [userId]
-  );
+  const { rowCount } = await pool.query('SELECT id FROM notifications WHERE user_id = $1', [userId]);
   if (rowCount) return;
   await pool.query(
     `INSERT INTO notifications (user_id, title, message, read)
@@ -192,7 +212,7 @@ async function seedNotifications(pool) {
   console.log('Inserted welcome notification (demo).');
 }
 
-async function main() {
+async function initializeDatabase() {
   await ensureDatabase();
   const pool = new Pool({ ...config, database: TARGET_DB });
   try {
@@ -214,7 +234,15 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('Seed failed:', err);
-  process.exit(1);
-});
+async function main() {
+  await initializeDatabase();
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Seed failed:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { initializeDatabase, seedUsers, seedCandidates, seedJobs, seedInterviews, seedNotifications };

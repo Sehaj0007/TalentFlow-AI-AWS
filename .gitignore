@@ -44,3 +44,22 @@ build/
 # Uploaded application files
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Environment files
+backend/.env
+
+# Terraform generated files
+terraform/.terraform/
+terraform/tfplan
+terraform/*.tfplan
+terraform/*.zip
+
+# Temporary Terraform/repository checks
+terraform/temp-repo-check/
+
+# Terraform state
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+
+launch-template-data.json
+scaling-policy.json

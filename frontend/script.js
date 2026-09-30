@@ -30,8 +30,28 @@ let state = {
   settings: loadSettings()
 };
 
-let currentUser = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+let currentUser = null;
 let revealObserver;
+
+function readSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function persistSession(sessionData) {
+  if (!sessionData) {
+    localStorage.removeItem(SESSION_KEY);
+    return;
+  }
+  localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
+}
+
+currentUser = readSession()?.user || null;
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -39,10 +59,20 @@ const esc = (s) => String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '
 const api = {
   async request(path, options = {}) {
     const opts = { ...options };
+    const session = readSession();
+    const headers = { ...(opts.headers || {}) };
+
+    if (session && session.token) {
+      headers.Authorization = `Bearer ${session.token}`;
+    }
+
     if (opts.body && typeof opts.body !== 'string' && !(opts.body instanceof FormData)) {
       opts.body = JSON.stringify(opts.body);
-      opts.headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+      opts.headers = { 'Content-Type': 'application/json', ...headers };
+    } else {
+      opts.headers = headers;
     }
+
     const res = await fetch(path, opts);
     const text = await res.text();
     let json = null;
@@ -58,6 +88,15 @@ const api = {
   },
   login(email, password) {
     return this.request('/api/auth/login', { method: 'POST', body: { email, password } });
+  },
+  register(name, email, password) {
+    return this.request('/api/auth/register', {
+      method: 'POST',
+      body: { name, email, password }
+    });
+  },
+  register(payload) {
+    return this.request('/api/auth/register', { method: 'POST', body: payload });
   },
   getCandidates(params = {}) {
     const qs = new URLSearchParams(params).toString();
@@ -188,34 +227,61 @@ function initAuth() {
     const pass = $('loginPassword').value;
     try {
       const result = await api.login(email, pass);
-      currentUser = result.user || { name: 'Admin', email };
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ ...currentUser, token: result.token }));
+      const session = { token: result.token, user: result.user };
+      currentUser = result.user;
+      persistSession(session);
       $('authScreen').classList.add('hidden');
       $('app').classList.remove('hidden');
       updateUserUI();
       await refreshAll();
       renderAll();
-      showToast('Welcome to TalentFlow AI', 'success');
+      showToast(result.message || 'Welcome to TalentFlow AI', 'success');
     } catch (err) {
       showToast(err.message || 'Invalid credentials', 'error');
     }
   };
+  
   $('registerForm').onsubmit = async (e) => {
     e.preventDefault();
-    if ($('registerPassword').value !== $('registerConfirmPassword').value) {
+
+    const firstName = $('registerFirstName').value.trim();
+    const lastName = $('registerLastName').value.trim();
+    const email = $('registerEmail').value.trim();
+    const password = $('registerPassword').value;
+    const confirmPassword = $('registerConfirmPassword').value;
+
+    if (password !== confirmPassword) {
       return showToast('Passwords do not match', 'error');
     }
-    const name = $('registerFirstName').value + ' ' + $('registerLastName').value;
-    const email = $('registerEmail').value;
-    currentUser = { name, email };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
-    $('authScreen').classList.add('hidden');
-    $('app').classList.remove('hidden');
-    updateUserUI();
-    await refreshAll();
-    renderAll();
-    showToast('Account created successfully', 'success');
+
+    const name = `${firstName} ${lastName}`.trim();
+
+    try {
+      const result = await api.register(name, email, password);
+
+      currentUser = result.user || { name, email };
+
+      localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({
+          ...currentUser,
+          token: result.token
+        })
+      );
+
+      $('authScreen').classList.add('hidden');
+      $('app').classList.remove('hidden');
+
+      updateUserUI();
+      await refreshAll();
+      renderAll();
+
+      showToast('Account created successfully', 'success');
+    } catch (err) {
+      showToast(err.message || 'Unable to create account', 'error');
+    }
   };
+
   $('forgotPassword').onclick = () => showToast('Password reset instructions would be sent to your email.');
 }
 
@@ -239,7 +305,8 @@ function initNavigation() {
     $('sidebarOverlay').classList.remove('open');
   };
   $('logoutButton').onclick = () => {
-    localStorage.removeItem(SESSION_KEY);
+    persistSession(null);
+    currentUser = null;
     location.reload();
   };
 }

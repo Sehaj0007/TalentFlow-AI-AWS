@@ -7,19 +7,10 @@
 # Amazon Linux 2023 AMI
 # ------------------------------------------------------------
 
-data "aws_ami" "amazon_linux" {
-  most_recent = true
-  owners      = ["137112412989"]
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
+variable "app_ami_id" {
+  description = "Pinned Amazon Linux 2023 AMI for TalentFlow EC2"
+  type        = string
+  default     = "ami-08bccdfb2ee2afd7a"
 }
 
 # ------------------------------------------------------------
@@ -27,7 +18,7 @@ data "aws_ami" "amazon_linux" {
 # ------------------------------------------------------------
 
 resource "aws_instance" "app" {
-  ami           = data.aws_ami.amazon_linux.id
+  ami           = var.app_ami_id
   instance_type = var.app_instance_type
 
   subnet_id = aws_subnet.public_a.id
@@ -35,6 +26,9 @@ resource "aws_instance" "app" {
   vpc_security_group_ids = [
     aws_security_group.app.id
   ]
+
+  # Key Pair added for direct SSH access
+  key_name = "myKey"
 
   iam_instance_profile = aws_iam_instance_profile.app.name
 
@@ -50,12 +44,20 @@ resource "aws_instance" "app" {
     s3_bucket = aws_s3_bucket.talentflow_files.bucket
   })
 
-  user_data_replace_on_change = true
+  # Prevent forced instance destruction on user_data updates
+  user_data_replace_on_change = false
 
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
     encrypted   = true
+  }
+
+  # Ignore changes to user_data so future 'terraform apply' calls run in-place
+  lifecycle {
+    ignore_changes = [
+      user_data,
+    ]
   }
 
   tags = merge(local.common_tags, {

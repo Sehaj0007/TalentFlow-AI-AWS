@@ -2,11 +2,18 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const { initializeDatabase } = require('./models/seed');
 
 const app = express();
 const PORT = process.env.PORT || 3010;
 
-app.use(cors());
+const frontendOrigin = process.env.FRONTEND_URL || process.env.CORS_ORIGIN || '*';
+const corsOptions = {
+  origin: frontendOrigin === '*' ? true : frontendOrigin,
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -15,17 +22,19 @@ app.use(express.static(path.join(__dirname, '..', 'frontend')));
 app.get('/api/health', async (req, res) => {
   try {
     const pool = require('./config/db');
-    const { rows } = await pool.query('SELECT NOW() AS now');
-    res.json({
+    await pool.query('SELECT 1');
+    return res.status(200).json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      db: rows[0].now,
+      db: 'connected',
     });
   } catch (err) {
-    res.json({
-      status: 'ok',
+    console.error('Health check failed:', err.message);
+    return res.status(503).json({
+      status: 'degraded',
       timestamp: new Date().toISOString(),
       db: 'unavailable',
+      message: 'Database service is temporarily unavailable',
     });
   }
 });
@@ -55,14 +64,29 @@ app.use('/api/*', (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
+
+  const message = err && err.status
+    ? err.message || 'Something went wrong'
+    : (err && /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|connection/i.test(err.message || ''))
+      ? 'Database service is temporarily unavailable'
+      : 'Something went wrong';
+
   res.status(err.status || 500).json({
     error: err.status ? 'Request Error' : 'Server Error',
-    message: err.message || 'Something went wrong',
+    message,
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`TalentFlow AI server running at http://localhost:${PORT}`);
-});
+(async () => {
+  try {
+    await initializeDatabase();
+  } catch (err) {
+    console.error('Database initialization failed:', err.message);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`TalentFlow AI server running at http://localhost:${PORT}`);
+  });
+})();
 
 module.exports = app;

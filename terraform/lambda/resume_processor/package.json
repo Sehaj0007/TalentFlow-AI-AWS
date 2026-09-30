@@ -1,0 +1,11 @@
+{
+  "name": "talentflow-resume-processor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lambda processor for TalentFlow AI resume uploads",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "pg": "^8.16.3"
+  }
+}

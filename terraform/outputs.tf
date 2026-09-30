@@ -93,3 +93,18 @@ output "s3_bucket_arn" {
   description = "ARN of the TalentFlow recruitment file bucket"
   value       = aws_s3_bucket.talentflow_files.arn
 }
+
+output "app_instance_id" {
+  description = "TalentFlow application EC2 instance ID"
+  value       = aws_instance.app.id
+}
+
+output "app_instance_public_ip" {
+  description = "Public IP of the TalentFlow application EC2 instance"
+  value       = aws_instance.app.public_ip
+}
+
+output "app_instance_public_dns" {
+  description = "Public DNS of the TalentFlow application EC2 instance"
+  value       = aws_instance.app.public_dns
+}

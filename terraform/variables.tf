@@ -54,3 +54,9 @@ variable "db_backup_retention_days" {
   type        = number
   default     = 1
 }
+
+variable "app_instance_type" {
+  description = "EC2 instance type for the TalentFlow application"
+  type        = string
+  default     = "t3.micro"
+}

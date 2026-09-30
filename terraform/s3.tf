@@ -115,3 +115,27 @@ resource "aws_s3_object" "static_prefix" {
   key     = "static/"
   content = ""
 }
+
+# ============================================================
+# S3 -> SQS Resume Processing Notification
+# ============================================================
+
+resource "aws_s3_bucket_notification" "resume_processing" {
+  bucket = aws_s3_bucket.talentflow_files.id
+
+  queue {
+    id = "resume-processing"
+
+    queue_arn = aws_sqs_queue.resume_processing.arn
+
+    events = [
+      "s3:ObjectCreated:*"
+    ]
+
+    filter_prefix = "resumes/"
+  }
+
+  depends_on = [
+    aws_sqs_queue_policy.resume_processing
+  ]
+}
