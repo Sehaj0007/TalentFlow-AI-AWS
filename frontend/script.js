@@ -1,6 +1,8 @@
 const SESSION_KEY = 'talentflow_ai_session';
 const THEME_KEY = 'talentflow_theme';
 const SETTINGS_KEY = 'talentflow_ai_settings_v1';
+const MAX_RESUME_SIZE = 10 * 1024 * 1024;
+const RESUME_EXTENSIONS = ['.pdf', '.doc', '.docx'];
 
 const demoData = {
   candidates: [
@@ -456,6 +458,9 @@ function renderAll() {
 function openCandidate(id) {
   const c = state.candidates.find((x) => x.id === id);
   if (!c) return;
+  const resumeMarkup = c.resume && c.resume.filename
+    ? `<p><strong>Resume:</strong> ${esc(c.resume.filename)}</p>`
+    : '<p>No resume uploaded</p>';
   openModal('CANDIDATE', 'Candidate Profile',
     `<div>
       <h3>${esc(c.name)}</h3>
@@ -466,6 +471,7 @@ function openCandidate(id) {
         <span class="tag">${esc(c.stage)}</span>
       </div>
       <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+      ${resumeMarkup}
       <label>Update stage</label>
       <select id="candidateStageEdit" class="form-control">
         ${['Applied', 'Screening', 'Shortlisted', 'Interview', 'Offer', 'Hired', 'Rejected'].map((s) => `<option ${s === c.stage ? 'selected' : ''}>${s}</option>`).join('')}
@@ -514,10 +520,22 @@ function addCandidate() {
       <div><label>Position</label><input id="newRole" required></div>
       <div><label>Experience</label><input id="newExperience" placeholder="e.g. 2 years" required></div>
       <div><label>AI Match</label><input id="newScore" type="number" min="0" max="100" value="85" required></div>
-      <button class="primary-button">Add Candidate</button>
+      <div><label for="newResume">Resume</label><input id="newResume" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></div>
+      <button class="primary-button" id="addCandidateSubmit" type="submit">Add Candidate</button>
     </form>`);
   $('candidateForm').onsubmit = async (e) => {
     e.preventDefault();
+    const file = $('newResume').files[0];
+    if (file) {
+      const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      if (!RESUME_EXTENSIONS.includes(extension)) {
+        return showToast('Choose a PDF, DOC, or DOCX resume.', 'error');
+      }
+      if (file.size > MAX_RESUME_SIZE) {
+        return showToast('Resume must be 10 MB or smaller.', 'error');
+      }
+    }
+
     const payload = {
       name: $('newName').value,
       email: $('newEmail').value,
@@ -525,17 +543,41 @@ function addCandidate() {
       experience: $('newExperience').value,
       score: +$('newScore').value
     };
+    const submitButton = $('addCandidateSubmit');
+    submitButton.disabled = true;
+    submitButton.textContent = 'Adding...';
+    let created;
     try {
-      const created = await api.createCandidate(payload);
-      state.candidates.unshift(created);
-      showToast('Candidate added', 'success');
+      created = await api.createCandidate(payload);
     } catch (err) {
-      const fallback = { id: Date.now(), ...payload, stage: 'Applied', applied_date: new Date().toISOString().slice(0, 10), source: 'Website' };
-      state.candidates.unshift(fallback);
-      showToast('API unavailable. Candidate saved for this session only.', 'info');
+      submitButton.disabled = false;
+      submitButton.textContent = 'Add Candidate';
+      return showToast('Could not create candidate. Please try again.', 'error');
     }
+
+    let resume;
+    if (file) {
+      submitButton.textContent = 'Uploading resume...';
+      try {
+        resume = await api.uploadResume(file, created.id);
+      } catch (err) {
+        await refreshAll();
+        if (!state.candidates.some((candidate) => String(candidate.id) === String(created.id))) {
+          state.candidates.unshift(created);
+        }
+        closeModal();
+        navigate('candidates');
+        return showToast('Candidate added, but the resume upload failed.', 'error');
+      }
+    }
+
+    await refreshAll();
+    const savedCandidate = state.candidates.find((candidate) => String(candidate.id) === String(created.id));
+    if (savedCandidate && resume) savedCandidate.resume = resume;
+    if (!savedCandidate) state.candidates.unshift({ ...created, ...(resume ? { resume } : {}) });
     closeModal();
     navigate('candidates');
+    showToast('Candidate added', 'success');
   };
 }
 
