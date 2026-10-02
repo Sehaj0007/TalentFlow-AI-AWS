@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
+const { signToken } = require('../middleware/auth');
 
 exports.register = async (req, res, next) => {
   try {
@@ -45,7 +46,7 @@ exports.register = async (req, res, next) => {
     const user = result.rows[0];
 
     return res.status(201).json({
-      token: `user-${user.id}`,
+      token: signToken(user),
       user: {
         name: user.name,
         email: user.email,
@@ -107,7 +108,7 @@ exports.login = async (req, res, next) => {
     }
 
     return res.json({
-      token: `user-${user.id}`,
+      token: signToken(user),
       user: {
         name: user.name,
         email: user.email,
